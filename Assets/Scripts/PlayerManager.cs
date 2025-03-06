@@ -31,7 +31,7 @@ public class PlayerManager : MonoBehaviour
     private bool isZoomed = false;              // 확대 여부 확인
     private bool isFirstPerson = false;         // 1인칭 모드 여부
     private bool isRotateAroundPlayer = true;     // 카메라가 플레이어 주변 회전 여부
-    
+
     private Coroutine zoomCoroutine;            // 코루틴을 사용하여 확대 축소 처리
     private Camera mainCamera;                  // 카메라 컴포넌트
 
@@ -56,6 +56,71 @@ public class PlayerManager : MonoBehaviour
 
     private void Update()
     {
+        // 마우스 입력을 받아 카메라와 플레이어 회전 처리
+        float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity * Time.deltaTime;
+        float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity * Time.deltaTime;
+
+        yaw += mouseX;
+        pitch -= mouseY;
+        pitch = Mathf.Clamp(pitch, -45, 45);
+
+        isGround = characterController.isGrounded;
+
+        if (isGround && velocity.y < 0)
+        {
+            velocity.y = -2f;
+        }
+
+        if (Input.GetKeyDown(KeyCode.V))
+        {
+            isFirstPerson = !isFirstPerson;
+            Debug.Log(isFirstPerson ? "1인칭" : "3인칭");
+        }
+
+        if (!isFirstPerson && Input.GetKeyDown(KeyCode.F))
+        {
+            isRotateAroundPlayer = !isRotateAroundPlayer;
+            Debug.Log(isRotateAroundPlayer ? "카메라가 주위를 회전" : "플레이어가 직접 회전");
+        }
+
+        if (isFirstPerson)
+        {
+            FirstPersonMovement();
+        }
+        else
+        {
+            ThirdPersonMovement();
+        }
+
+    }
+
+    void FirstPersonMovement()
+    {
+        float horizontal = Input.GetAxis("Horizontal");
+        float vertical = Input.GetAxis("Vertical");
+        
+        // 현재 카메라의 회전값을 기준으로 움직임
+        Vector3 moveDirection = cameraTransform.forward * vertical + cameraTransform.right * horizontal;
+        moveDirection.y = 0;
+        characterController.Move(moveDirection * moveSpeed * Time.deltaTime);
+
+        // 카메라의 위치를 1인칭 위치로 이동
+        cameraTransform.position = playerHead.position;
+        // 카메라의 회전값을 마우스의 이동에 따라 변경
+        cameraTransform.rotation = Quaternion.Euler(pitch, yaw, 0);
+
+        // 카메라의 yaw값에 따라 플레이어도 회전
+        transform.rotation = Quaternion.Euler(0f, cameraTransform.eulerAngles.y, 0);
+    }
+
+    void ThirdPersonMovement()
+    {
+        float horizontal = Input.GetAxis("Horizontal");
+        float vertical = Input.GetAxis("Vertical");
+
+        Vector3 move = transform.right * horizontal + transform.forward * vertical;
+        characterController.Move(move * moveSpeed * Time.deltaTime);
+
         UpdateCameraPosition();
     }
 
