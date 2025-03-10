@@ -269,6 +269,9 @@ public class PlayerManager : MonoBehaviour
         // 현재 거리에서 목표 거리로 부드럽게 이동
         while(Mathf.Abs(currentDistance - targetDistance) > 0.01f)
         {
+            // 선형 보간을 이용하여 Time.deltaTime*zoomSpeed 값으로 계속해서 이동
+            // currentDistance에 해당 값을 계속해서 대입하므로 T는 그대로여도 상관 x
+            // 시작점이 이동한다고 보면 됨
             currentDistance = Mathf.Lerp(currentDistance, targetDistance, Time.deltaTime * zoomSpeed);
             yield return null;
         }
