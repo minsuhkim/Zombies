@@ -1,7 +1,14 @@
 fileFormatVersion: 2
-guid: 44322f980ebf68c498f819a67228b078
+guid: 517f32ee66b887348996bfd4b4623163
 DefaultImporter:
   externalObjects: {}
   userData: 
   assetBundleName: 
   assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 125731
+  packageName: "\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+  packageVersion: 1.1
+  assetPath: Assets/ALP_Assets/country house01/DemoScene/DemoScene.unity
+  uploadId: 607083

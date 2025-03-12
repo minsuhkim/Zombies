@@ -42286,7 +42286,7 @@ AnimationClip:
   m_HasMotionFloatCurves: 0
   m_Events:
   - time: 0.73333335
-    functionName: OnChangeWeaponUpdateAudio
+    functionName: OnChangeWeaponAudio
     data: 
     objectReferenceParameter: {fileID: 0}
     floatParameter: 0

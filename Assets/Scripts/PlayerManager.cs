@@ -62,6 +62,15 @@ public class PlayerManager : MonoBehaviour
     private float mouseX;
     private float mouseY;
 
+    private int animationSpeed = 1;
+    private string currentAnimation = "Idle";
+
+    public Transform aimTarget;
+
+    private float weaponMaxDistance = 100.0f;
+
+    public LayerMask targetLayer;
+
     private void Start()
     {
         Cursor.lockState = CursorLockMode.Locked;
@@ -87,6 +96,30 @@ public class PlayerManager : MonoBehaviour
         UpdateAnimation();
         Fire();
         ChangeWeapon();
+        PickUp();
+        //animator.speed = animationSpeed;
+
+        //AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
+
+        //if (stateInfo.IsName(currentAnimation) && stateInfo.normalizedTime >= 1.0f)
+        //{
+        //    Debug.Log(currentAnimation);
+        //}
+    }
+
+    private void UpdateAimTarget()
+    {
+        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        //Gizmos.DrawRay(ray);
+        aimTarget.position = ray.GetPoint(10.0f);
+    }
+
+    public void PickUp()
+    {
+        if (Input.GetKeyDown(KeyCode.E))
+        {
+            animator.SetTrigger("PickUp");
+        }
     }
 
     public void RotateCharacter()
@@ -150,7 +183,6 @@ public class PlayerManager : MonoBehaviour
         if (Input.GetMouseButtonDown(1))
         {
             isAim = true;
-            //animator.SetBool("isAim", isAim);
             animator.SetLayerWeight(1, 1);
             // 현재 진행중인 코루틴이 존재하면(줌인/줌아웃이 진행중이라면) 진행중인 코루틴을 멈춤
             if (zoomCoroutine != null)
@@ -183,7 +215,6 @@ public class PlayerManager : MonoBehaviour
         if (Input.GetMouseButtonUp(1))
         {
             isAim = false;
-            //animator.SetBool("isAim", isAim);
             animator.SetLayerWeight(1, 0);
             if (zoomCoroutine != null)
             {
@@ -221,8 +252,35 @@ public class PlayerManager : MonoBehaviour
         {
             if (isAim)
             {
+                // weapon Type에 따라 MaxDistance 설정해주는 기능 추가해주면 좋음
+                // 지금은 rifle밖에 없어서 1000.0f으로 고정
+                weaponMaxDistance = 1000.0f;
+
                 isFire = true;
                 animator.SetTrigger("Fire");
+
+                Ray ray = new Ray(mainCamera.transform.position, mainCamera.transform.forward);
+                RaycastHit hit;
+
+                if (Physics.Raycast(ray, out hit, weaponMaxDistance, targetLayer))
+                {
+                    Debug.DrawLine(ray.origin, hit.point, Color.red, 2.0f);
+                    ZombieManager zombie = hit.collider.gameObject.GetComponent<ZombieManager>();
+                    if (zombie)
+                    {
+                        zombie.HP -= 10;
+                        Debug.Log(zombie.HP);
+                        if(zombie.HP == 0)
+                        {
+                            zombie.gameObject.SetActive(false);
+                        }
+                    }
+
+                }
+                else
+                {
+                    Debug.DrawLine(ray.origin, ray.origin + ray.direction * weaponMaxDistance, Color.red, 2.0f);
+                }
             }
         }
         else
@@ -291,6 +349,8 @@ public class PlayerManager : MonoBehaviour
             Vector3 direction = new Vector3(0, 0, -currentDistance);
             cameraTransform.position = playerLookObj.position + thirdPersonOffset + Quaternion.Euler(pitch, yaw, 0) * direction;
             cameraTransform.LookAt(playerLookObj.position + new Vector3(0, thirdPersonOffset.y, 0));
+
+            UpdateAimTarget();
         }
     }
 
@@ -331,13 +391,26 @@ public class PlayerManager : MonoBehaviour
         mainCamera.fieldOfView = targetFov;
     }
 
-    public void OnChangeWeaponUpdateAudio()
+    public void OnChangeWeaponAudio()
     {
         audioSource.PlayOneShot(audioClipWeaponChange);
     }
 
-    public void OnFireUpdateAudio()
+    public void OnFireAudio()
     {
         audioSource.PlayOneShot(audioClipFire);
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other.tag == "PlayerDamage")
+        {
+            //animationSpeed = 3;
+            characterController.enabled = false;
+            transform.position = Vector3.zero;
+            characterController.enabled = true;
+            OnChangeWeaponAudio();
+            animator.SetTrigger("Hit"); // 강사님은 Damage
+        }
     }
 }
