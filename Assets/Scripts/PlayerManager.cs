@@ -58,6 +58,10 @@ public class PlayerManager : MonoBehaviour
     private AudioSource audioSource;
 
     public GameObject rifleM4Obj;
+
+    private float mouseX;
+    private float mouseY;
+
     private void Start()
     {
         Cursor.lockState = CursorLockMode.Locked;
@@ -73,33 +77,55 @@ public class PlayerManager : MonoBehaviour
 
     private void Update()
     {
+        RotateCharacter();
+        CheckGround();
+        ChangePointOfView();
+        MoveWalk();
+        AimOn();
+        AimOff();
+        MoveRun();
+        UpdateAnimation();
+        Fire();
+        ChangeWeapon();
+    }
+
+    public void RotateCharacter()
+    {
         // 마우스 입력을 받아 카메라와 플레이어 회전 처리
-        float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity * Time.deltaTime;
-        float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity * Time.deltaTime;
+        mouseX = Input.GetAxis("Mouse X") * mouseSensitivity * Time.deltaTime;
+        mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity * Time.deltaTime;
 
         yaw += mouseX;
         pitch -= mouseY;
         pitch = Mathf.Clamp(pitch, -45, 45);
+    }
 
+    public void CheckGround()
+    {
         isGround = characterController.isGrounded;
-
         if (isGround && velocity.y < 0)
         {
             velocity.y = -2f;
         }
+    }
 
+    public void ChangePointOfView()
+    {
         if (Input.GetKeyDown(KeyCode.V))
         {
             isFirstPerson = !isFirstPerson;
-            Debug.Log(isFirstPerson ? "1인칭" : "3인칭");
+            //Debug.Log(isFirstPerson ? "1인칭" : "3인칭");
         }
 
         if (!isFirstPerson && Input.GetKeyDown(KeyCode.F))
         {
             isRotateAroundPlayer = !isRotateAroundPlayer;
-            Debug.Log(isRotateAroundPlayer ? "카메라가 주위를 회전" : "플레이어가 직접 회전");
+            //Debug.Log(isRotateAroundPlayer ? "카메라가 주위를 회전" : "플레이어가 직접 회전");
         }
+    }
 
+    public void MoveWalk()
+    {
         // 시점에 따른 움직임
         if (isFirstPerson)
         {
@@ -109,13 +135,23 @@ public class PlayerManager : MonoBehaviour
         {
             ThirdPersonMovement();
         }
+    }
 
+    public void MoveRun()
+    {
+        isRunnning = Input.GetKey(KeyCode.LeftShift);
+        moveSpeed = isRunnning ? runSpeed : walkSpeed;
+        animator.SetBool("isRun", isRunnning);
+    }
 
+    public void AimOn()
+    {
         // 우클릭 누르고 있는 동안
         if (Input.GetMouseButtonDown(1))
         {
             isAim = true;
-            animator.SetBool("isAim", isAim);
+            //animator.SetBool("isAim", isAim);
+            animator.SetLayerWeight(1, 1);
             // 현재 진행중인 코루틴이 존재하면(줌인/줌아웃이 진행중이라면) 진행중인 코루틴을 멈춤
             if (zoomCoroutine != null)
             {
@@ -139,13 +175,16 @@ public class PlayerManager : MonoBehaviour
                 zoomCoroutine = StartCoroutine(ZoomCamera(targetDistance));
             }
         }
+    }
 
+    public void AimOff()
+    {
         // 우클릭 해제 하면
         if (Input.GetMouseButtonUp(1))
         {
             isAim = false;
-            animator.SetBool("isAim", isAim);
-            
+            //animator.SetBool("isAim", isAim);
+            animator.SetLayerWeight(1, 0);
             if (zoomCoroutine != null)
             {
                 StopCoroutine(zoomCoroutine);
@@ -168,33 +207,34 @@ public class PlayerManager : MonoBehaviour
                 zoomCoroutine = StartCoroutine(ZoomCamera(targetDistance));
             }
         }
+    }
 
-        isRunnning = Input.GetKey(KeyCode.LeftShift);
-        moveSpeed = isRunnning ? runSpeed : walkSpeed;
+    public void UpdateAnimation()
+    {
         animator.SetFloat("Horizontal", horizontal);
         animator.SetFloat("Vertical", vertical);
-        animator.SetBool("isRun", isRunnning);
+    }
 
-
-
-        if (Input.GetMouseButton(0))
+    public void Fire()
+    {
+        if (Input.GetMouseButtonDown(0))
         {
             if (isAim)
             {
                 isFire = true;
-                animator.SetBool("isFire", isFire);
-                audioSource.PlayOneShot(audioClipFire);
-            }            
+                animator.SetTrigger("Fire");
+            }
         }
         else
         {
             isFire = false;
-            animator.SetBool("isFire", isFire);
         }
+    }
 
+    public void ChangeWeapon()
+    {
         if (Input.GetKeyDown(KeyCode.Alpha1))
         {
-            audioSource.PlayOneShot(audioClipWeaponChange);
             rifleM4Obj.SetActive(true);
             animator.SetTrigger("onChangeWeapon");
         }
@@ -202,9 +242,9 @@ public class PlayerManager : MonoBehaviour
 
     void FirstPersonMovement()
     {
-        horizontal = isAim ? 0 : Input.GetAxis("Horizontal");
-        vertical = isAim ? 0 : Input.GetAxis("Vertical");
-        
+        horizontal = Input.GetAxis("Horizontal");
+        vertical = Input.GetAxis("Vertical");
+
         // 현재 카메라의 회전값을 기준으로 움직임
         Vector3 moveDirection = cameraTransform.forward * vertical + cameraTransform.right * horizontal;
         moveDirection.y = 0;
@@ -221,8 +261,8 @@ public class PlayerManager : MonoBehaviour
 
     void ThirdPersonMovement()
     {
-        horizontal = isAim ? 0 : Input.GetAxis("Horizontal");
-        vertical = isAim ? 0 : Input.GetAxis("Vertical");
+        horizontal = Input.GetAxis("Horizontal");
+        vertical = Input.GetAxis("Vertical");
 
         Vector3 move = transform.right * horizontal + transform.forward * vertical;
         characterController.Move(move * moveSpeed * Time.deltaTime);
@@ -267,7 +307,7 @@ public class PlayerManager : MonoBehaviour
     IEnumerator ZoomCamera(float targetDistance)
     {
         // 현재 거리에서 목표 거리로 부드럽게 이동
-        while(Mathf.Abs(currentDistance - targetDistance) > 0.01f)
+        while (Mathf.Abs(currentDistance - targetDistance) > 0.01f)
         {
             // 선형 보간을 이용하여 Time.deltaTime*zoomSpeed 값으로 계속해서 이동
             // currentDistance에 해당 값을 계속해서 대입하므로 T는 그대로여도 상관 x
@@ -282,12 +322,22 @@ public class PlayerManager : MonoBehaviour
     IEnumerator ZoomFieldOfView(float targetFov)
     {
         // 현재 Fov에서 목표 Fov로 부드럽게 조정
-        while(Mathf.Abs(mainCamera.fieldOfView - targetFov) > 0.01f)
+        while (Mathf.Abs(mainCamera.fieldOfView - targetFov) > 0.01f)
         {
             mainCamera.fieldOfView = Mathf.Lerp(mainCamera.fieldOfView, targetFov, Time.deltaTime * zoomSpeed);
             yield return null;
         }
         // 목표에 도달한 후 값을 고정
         mainCamera.fieldOfView = targetFov;
+    }
+
+    public void OnChangeWeaponUpdateAudio()
+    {
+        audioSource.PlayOneShot(audioClipWeaponChange);
+    }
+
+    public void OnFireUpdateAudio()
+    {
+        audioSource.PlayOneShot(audioClipFire);
     }
 }
