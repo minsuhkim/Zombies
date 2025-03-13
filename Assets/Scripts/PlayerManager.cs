@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.Animations.Rigging;
 
 
 
@@ -36,9 +37,9 @@ public class PlayerManager : MonoBehaviour
     private Camera mainCamera;                  // 카메라 컴포넌트
 
 
-    // 중력 관련 변수
-    public float gravity = -9.81f;
-    public float jumpHeight = 2.0f;
+    //// 중력 관련 변수
+    //public float gravity = -9.81f;
+    //public float jumpHeight = 2.0f;
 
     private Vector3 velocity;
     private bool isGround;
@@ -55,6 +56,7 @@ public class PlayerManager : MonoBehaviour
 
     public AudioClip audioClipFire;
     public AudioClip audioClipWeaponChange;
+    public AudioClip audioClipGetItem;
     private AudioSource audioSource;
 
     public GameObject rifleM4Obj;
@@ -69,7 +71,29 @@ public class PlayerManager : MonoBehaviour
 
     private float weaponMaxDistance = 100.0f;
 
-    public LayerMask targetLayer;
+    public LayerMask targetLayerMask;
+
+    public MultiAimConstraint multiAimConstraint;
+
+    public Vector3 boxSize = Vector3.one;
+    public float castDistance = 5.0f;
+    public LayerMask itemLayer;
+    public Transform itemGetPos;
+
+    public GameObject crossHairImage;
+    public GameObject getItemImage;
+
+    private bool isGetGunItem = false;
+    private bool isUseWeapon = false;
+
+    private int curBulletTotalCount = 0;
+    private int curBulletCount = 0;
+
+    private Item curItem;
+    private GunType curGunType;
+    public ParticleSystem shotEffect;
+
+    private float rifleFireDelay = 0.1f;
 
     private void Start()
     {
@@ -82,6 +106,8 @@ public class PlayerManager : MonoBehaviour
 
         animator = GetComponent<Animator>();
         audioSource = GetComponent<AudioSource>();
+        crossHairImage.SetActive(false);
+        getItemImage.SetActive(false);
     }
 
     private void Update()
@@ -116,15 +142,44 @@ public class PlayerManager : MonoBehaviour
 
     public void PickUp()
     {
-        if (Input.GetKeyDown(KeyCode.E))
+        AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
+
+        if (Input.GetKeyDown(KeyCode.E) && !stateInfo.IsName("PickUp"))
         {
             animator.SetTrigger("PickUp");
         }
     }
 
+    public void OnPickUp()
+    {
+        Vector3 origin = itemGetPos.position;
+        Vector3 direction = itemGetPos.forward;
+        RaycastHit[] hits = Physics.BoxCastAll(origin, boxSize / 2, direction, Quaternion.identity, castDistance, itemLayer);
+
+        foreach (var hit in hits)
+        {
+            if (hit.collider.tag == "Item")
+            {
+                curItem = hit.collider.GetComponent<Item>();
+                curGunType = curItem.gunType;
+                rifleFireDelay = curItem.fireDelay;
+                weaponMaxDistance = curItem.maxDistance;
+                curBulletTotalCount = curItem.bulletTotalCount;
+                curBulletCount = curItem.bulletCurrentCount;
+
+                hit.collider.gameObject.SetActive(false);
+                isGetGunItem = true;
+                getItemImage.SetActive(true);
+                audioSource.PlayOneShot(audioClipGetItem);
+            }
+            Debug.Log($"Item : {hit.collider.name}");
+            break;
+        }
+    }
+
+    // 마우스 입력을 받아 카메라와 플레이어 회전 처리
     public void RotateCharacter()
     {
-        // 마우스 입력을 받아 카메라와 플레이어 회전 처리
         mouseX = Input.GetAxis("Mouse X") * mouseSensitivity * Time.deltaTime;
         mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity * Time.deltaTime;
 
@@ -133,6 +188,7 @@ public class PlayerManager : MonoBehaviour
         pitch = Mathf.Clamp(pitch, -45, 45);
     }
 
+    // 캐릭터가 Ground에 있을 때 조정
     public void CheckGround()
     {
         isGround = characterController.isGrounded;
@@ -142,24 +198,23 @@ public class PlayerManager : MonoBehaviour
         }
     }
 
+    // V, F키를 통해 시점 변경 (1인칭, 3인칭)
     public void ChangePointOfView()
     {
         if (Input.GetKeyDown(KeyCode.V))
         {
             isFirstPerson = !isFirstPerson;
-            //Debug.Log(isFirstPerson ? "1인칭" : "3인칭");
         }
 
         if (!isFirstPerson && Input.GetKeyDown(KeyCode.F))
         {
             isRotateAroundPlayer = !isRotateAroundPlayer;
-            //Debug.Log(isRotateAroundPlayer ? "카메라가 주위를 회전" : "플레이어가 직접 회전");
         }
     }
 
+    // 시점에 따른 움직임
     public void MoveWalk()
     {
-        // 시점에 따른 움직임
         if (isFirstPerson)
         {
             FirstPersonMovement();
@@ -170,6 +225,7 @@ public class PlayerManager : MonoBehaviour
         }
     }
 
+    // lft shft 키를 통해 달릴 지 말 지를 결정
     public void MoveRun()
     {
         isRunnning = Input.GetKey(KeyCode.LeftShift);
@@ -177,12 +233,15 @@ public class PlayerManager : MonoBehaviour
         animator.SetBool("isRun", isRunnning);
     }
 
+    // 마우스 우클릭을 하면 줌 인
     public void AimOn()
     {
         // 우클릭 누르고 있는 동안
-        if (Input.GetMouseButtonDown(1))
+        if (Input.GetMouseButtonDown(1) && isGetGunItem && isUseWeapon)
         {
             isAim = true;
+            crossHairImage.SetActive(true);
+            multiAimConstraint.data.offset = new Vector3(-30, 0, 0);
             animator.SetLayerWeight(1, 1);
             // 현재 진행중인 코루틴이 존재하면(줌인/줌아웃이 진행중이라면) 진행중인 코루틴을 멈춤
             if (zoomCoroutine != null)
@@ -209,12 +268,15 @@ public class PlayerManager : MonoBehaviour
         }
     }
 
+    // 마우스 우클릭을 떼면 줌 아웃
     public void AimOff()
     {
         // 우클릭 해제 하면
-        if (Input.GetMouseButtonUp(1))
+        if (Input.GetMouseButtonUp(1) && isGetGunItem && isUseWeapon)
         {
             isAim = false;
+            crossHairImage.SetActive(false);
+            multiAimConstraint.data.offset = new Vector3(0, 0, 0);
             animator.SetLayerWeight(1, 0);
             if (zoomCoroutine != null)
             {
@@ -240,64 +302,82 @@ public class PlayerManager : MonoBehaviour
         }
     }
 
+    // 블렌드 트리를 통한 애니메이션 제어를 위한 파라미터 값 업데이트
     public void UpdateAnimation()
     {
         animator.SetFloat("Horizontal", horizontal);
         animator.SetFloat("Vertical", vertical);
     }
 
+    // 총알 발사
     public void Fire()
     {
-        if (Input.GetMouseButtonDown(0))
+        // 마우스 왼쪽 버튼을 누르고 있으면 발사
+        if (Input.GetMouseButton(0))
         {
-            if (isAim)
+            // 조준을 하고 있을 때/ 발사를 하고 있지 않을 때/ 현재 총알 수가 0보다 많을 때만
+            if (isAim && !isFire && curBulletCount > 0)
             {
-                // weapon Type에 따라 MaxDistance 설정해주는 기능 추가해주면 좋음
-                // 지금은 rifle밖에 없어서 1000.0f으로 고정
-                weaponMaxDistance = 1000.0f;
+                // 총알 수 감소
+                curBulletCount--;
 
+                // 발사 중으로 체크
                 isFire = true;
                 animator.SetTrigger("Fire");
+                // 발사 딜레이 만큼 발사 못하게 딜레이 부여
+                StartCoroutine(FireOff());
 
+                // 메인 카메라에서 forward 방향으로 ray 발사
                 Ray ray = new Ray(mainCamera.transform.position, mainCamera.transform.forward);
-                RaycastHit hit;
+                // targetLayerMask에 해당하는 layer만 hits에 저장
+                RaycastHit[] hits = Physics.RaycastAll(ray, weaponMaxDistance, targetLayerMask);
 
-                if (Physics.Raycast(ray, out hit, weaponMaxDistance, targetLayer))
+
+                //foreach (var hit in hits)
+                //{
+                //    Debug.Log($"{hit.collider.name}");
+                //}
+
+                // hits에 저장된 게 있을 때
+                if (hits.Length > 0)
                 {
-                    Debug.DrawLine(ray.origin, hit.point, Color.red, 2.0f);
-                    ZombieManager zombie = hit.collider.gameObject.GetComponent<ZombieManager>();
-                    if (zombie)
+                    // 좀비의 hp 감소 및 발사 궤도 draw(red)
+                    foreach (var hit in hits)
                     {
+                        ZombieManager zombie = hit.collider.GetComponent<ZombieManager>();
                         zombie.HP -= 10;
-                        Debug.Log(zombie.HP);
-                        if(zombie.HP == 0)
-                        {
-                            zombie.gameObject.SetActive(false);
-                        }
+                        Debug.Log($"충돌: {hit.collider.name}, {zombie.HP}");
+                        Debug.DrawLine(ray.origin, hit.point, Color.red, 2.0f);
                     }
-
                 }
+                // 발사 궤도 draw(green)
                 else
                 {
-                    Debug.DrawLine(ray.origin, ray.origin + ray.direction * weaponMaxDistance, Color.red, 2.0f);
+                    Debug.DrawLine(ray.origin, ray.origin + ray.direction * weaponMaxDistance, Color.green, 2.0f);
                 }
             }
         }
-        else
-        {
-            isFire = false;
-        }
+        //else
+        //{
+        //    isFire = false;
+        //}
     }
 
+    // 무기 장착 및 변경
     public void ChangeWeapon()
     {
-        if (Input.GetKeyDown(KeyCode.Alpha1))
+        // 1번 키를 눌렀을 때/ 총을 가지고 있을 때만
+        if (Input.GetKeyDown(KeyCode.Alpha1) && isGetGunItem)
         {
+            // 손에 미리 장착해 놓은 총 활성화
             rifleM4Obj.SetActive(true);
             animator.SetTrigger("onChangeWeapon");
+            // 조준을 할 수 있도록 체크
+            isUseWeapon = true;
         }
     }
 
+    // 1인칭 일때의 움직임
     void FirstPersonMovement()
     {
         horizontal = Input.GetAxis("Horizontal");
@@ -317,6 +397,7 @@ public class PlayerManager : MonoBehaviour
         transform.rotation = Quaternion.Euler(0f, cameraTransform.eulerAngles.y, 0);
     }
 
+    // 3인칭 일때의 움직임
     void ThirdPersonMovement()
     {
         horizontal = Input.GetAxis("Horizontal");
@@ -328,6 +409,7 @@ public class PlayerManager : MonoBehaviour
         UpdateCameraPosition();
     }
 
+    // 카메라가 플레이어 시선을 따라갈 지 / 플레이어 주변을 회전할 지 결정
     void UpdateCameraPosition()
     {
         if (isRotateAroundPlayer)
@@ -364,6 +446,7 @@ public class PlayerManager : MonoBehaviour
         targetFov = FOV;
     }
 
+    // 3인칭 시점에서 조준할 때 카메라 줌 인
     IEnumerator ZoomCamera(float targetDistance)
     {
         // 현재 거리에서 목표 거리로 부드럽게 이동
@@ -379,6 +462,7 @@ public class PlayerManager : MonoBehaviour
         currentDistance = targetDistance;
     }
 
+    // 1인칭 시점에서 조준할 때 줌 인
     IEnumerator ZoomFieldOfView(float targetFov)
     {
         // 현재 Fov에서 목표 Fov로 부드럽게 조정
@@ -391,26 +475,36 @@ public class PlayerManager : MonoBehaviour
         mainCamera.fieldOfView = targetFov;
     }
 
+    // 총알 발사에 딜레이를 주는 함수
+    IEnumerator FireOff()
+    {
+        yield return new WaitForSeconds(rifleFireDelay);
+        isFire = false;
+    }
+
+    // 무기 장착 및 변경 애니메이션에서 audio play 이벤트
     public void OnChangeWeaponAudio()
     {
         audioSource.PlayOneShot(audioClipWeaponChange);
     }
 
+    // 총알 발사 애니메이션에서 audio 및 발사 파티클 play 이벤트
     public void OnFireAudio()
     {
         audioSource.PlayOneShot(audioClipFire);
+        shotEffect.Play();
     }
 
     private void OnTriggerEnter(Collider other)
     {
-        if (other.tag == "PlayerDamage")
-        {
-            //animationSpeed = 3;
-            characterController.enabled = false;
-            transform.position = Vector3.zero;
-            characterController.enabled = true;
-            OnChangeWeaponAudio();
-            animator.SetTrigger("Hit"); // 강사님은 Damage
-        }
+        //if (other.tag == "PlayerDamage")
+        //{
+        //    //animationSpeed = 3;
+        //    characterController.enabled = false;
+        //    transform.position = Vector3.zero;
+        //    characterController.enabled = true;
+        //    OnChangeWeaponAudio();
+        //    animator.SetTrigger("Hit"); // 강사님은 Damage
+        //}
     }
 }
