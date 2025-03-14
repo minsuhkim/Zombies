@@ -1,12 +1,14 @@
 using System.Collections;
 using UnityEngine;
 using UnityEngine.Animations.Rigging;
+using UnityEngine.UI;
 
 
 
 
 public class PlayerManager : MonoBehaviour
 {
+    [Header("Basic")]
     public float moveSpeed = 5.0f;              // 플레이어 이동 속도
     public float mouseSensitivity = 100.0f;     // 마우스 감도
     public float thirdPersonDistance = 3.0f;    // 3인칭 모드에서 플레이어와 카메라의 거리
@@ -41,25 +43,30 @@ public class PlayerManager : MonoBehaviour
     //public float gravity = -9.81f;
     //public float jumpHeight = 2.0f;
 
+    [Header("Gravity")]
     private Vector3 velocity;
     private bool isGround;
 
     private Animator animator;
     private float horizontal;
     private float vertical;
+
     private bool isRunnning;
     private bool isAim = false;
     private bool isFire = false;
 
+    [Header("Speed")]
     public float walkSpeed = 5.0f;
     public float runSpeed = 10.0f;
 
+    [Header("Audio")]
     public AudioClip audioClipFire;
     public AudioClip audioClipWeaponChange;
     public AudioClip audioClipGetItem;
     private AudioSource audioSource;
 
-    public GameObject rifleM4Obj;
+    [Header("Gun Object")]
+    public GameObject[] gunObj;
 
     private float mouseX;
     private float mouseY;
@@ -67,33 +74,48 @@ public class PlayerManager : MonoBehaviour
     private int animationSpeed = 1;
     private string currentAnimation = "Idle";
 
+    [Header("Aim")]
     public Transform aimTarget;
-
     private float weaponMaxDistance = 100.0f;
-
     public LayerMask targetLayerMask;
 
+    [Header("Animation Rig Control")]
     public MultiAimConstraint multiAimConstraint;
 
+    [Header("PickUp")]
     public Vector3 boxSize = Vector3.one;
     public float castDistance = 5.0f;
     public LayerMask itemLayer;
     public Transform itemGetPos;
 
+    [Header("Image")]
     public GameObject crossHairImage;
-    public GameObject getItemImage;
+    public GameObject[] getItemImages;
 
-    private bool isGetGunItem = false;
+    private bool[] isGetGunItem;
     private bool isUseWeapon = false;
+    private bool isReloading = false;
 
     private int curBulletTotalCount = 0;
     private int curBulletCount = 0;
 
+    [Header("Gun Data Info")]
+    public ItemSO[] itemDatas;
     private Item curItem;
+    [SerializeField]
     private GunType curGunType;
+    private int prevGunIndex = 0;
+    private int curGunIndex;
     public ParticleSystem shotEffect;
+    private float currentDamage;
 
-    private float rifleFireDelay = 0.1f;
+    private float fireDelay = 0.1f;
+
+    [Header("GunInfoUI")]
+    public Text gunNameText;
+    public Text totalBulletText;
+    public Text currentBulletText;
+    public Text gunDamageText;
 
     private void Start()
     {
@@ -107,7 +129,8 @@ public class PlayerManager : MonoBehaviour
         animator = GetComponent<Animator>();
         audioSource = GetComponent<AudioSource>();
         crossHairImage.SetActive(false);
-        getItemImage.SetActive(false);
+
+        isGetGunItem = new bool[5];
     }
 
     private void Update()
@@ -123,14 +146,53 @@ public class PlayerManager : MonoBehaviour
         Fire();
         ChangeWeapon();
         PickUp();
-        //animator.speed = animationSpeed;
+        Reload();
+    }
 
-        //AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
+    private void SetGunData(int index)
+    {
+        animator.SetFloat("Gun", index);
+        fireDelay = itemDatas[index].fireDelay;
+        weaponMaxDistance = itemDatas[index].maxWeaponDistance;
+        curBulletTotalCount = itemDatas[index].bulletTotalCount;
+        curBulletCount = itemDatas[index].bulletCurrentCount;
+        currentDamage = itemDatas[index].damage;
 
-        //if (stateInfo.IsName(currentAnimation) && stateInfo.normalizedTime >= 1.0f)
-        //{
-        //    Debug.Log(currentAnimation);
-        //}
+        gunNameText.text = itemDatas[index].name;
+        totalBulletText.text = $"Total: {curBulletTotalCount}";
+        currentBulletText.text = $"Current: {curBulletCount}";
+        gunDamageText.text = $"Damage: {itemDatas[index].damage}";
+
+    }
+
+    private void DebugBox(Vector3 origin, Vector3 direction)
+    {
+        Vector3 endPoint = origin + direction * castDistance;
+
+        Vector3[] corners = new Vector3[8];
+        corners[0] = origin + new Vector3(-boxSize.x, -boxSize.y, -boxSize.z) / 2;
+        corners[1] = origin + new Vector3(boxSize.x, -boxSize.y, -boxSize.z) / 2;
+        corners[2] = origin + new Vector3(-boxSize.x, boxSize.y, -boxSize.z) / 2;
+        corners[3] = origin + new Vector3(boxSize.x, boxSize.y, -boxSize.z) / 2;
+        corners[4] = origin + new Vector3(-boxSize.x, -boxSize.y, boxSize.z) / 2;
+        corners[5] = origin + new Vector3(boxSize.x, -boxSize.y, boxSize.z) / 2;
+        corners[6] = origin + new Vector3(-boxSize.x, boxSize.y, boxSize.z) / 2;
+        corners[7] = origin + new Vector3(boxSize.x, boxSize.y, boxSize.z) / 2;
+
+        Debug.DrawLine(corners[0], corners[1], Color.green, 3.0f);
+        Debug.DrawLine(corners[1], corners[3], Color.green, 3.0f);
+        Debug.DrawLine(corners[3], corners[2], Color.green, 3.0f);
+        Debug.DrawLine(corners[2], corners[0], Color.green, 3.0f);
+        Debug.DrawLine(corners[4], corners[5], Color.green, 3.0f);
+        Debug.DrawLine(corners[5], corners[7], Color.green, 3.0f);
+        Debug.DrawLine(corners[7], corners[6], Color.green, 3.0f);
+        Debug.DrawLine(corners[6], corners[4], Color.green, 3.0f);
+        Debug.DrawLine(corners[0], corners[4], Color.green, 3.0f);
+        Debug.DrawLine(corners[1], corners[5], Color.green, 3.0f);
+        Debug.DrawLine(corners[2], corners[6], Color.green, 3.0f);
+        Debug.DrawLine(corners[3], corners[7], Color.green, 3.0f);
+        Debug.DrawRay(origin, direction * castDistance, Color.green, 3.0f);
+
     }
 
     private void UpdateAimTarget()
@@ -144,16 +206,19 @@ public class PlayerManager : MonoBehaviour
     {
         AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
 
-        if (Input.GetKeyDown(KeyCode.E) && !stateInfo.IsName("PickUp"))
+        if (Input.GetKeyDown(KeyCode.E) && !stateInfo.IsName("PickUp") && !isReloading && !isFire)
         {
             animator.SetTrigger("PickUp");
         }
     }
 
+    // pick up 애니메이션에서 실제로 아이템을 줍는 이벤트
     public void OnPickUp()
     {
+        
         Vector3 origin = itemGetPos.position;
         Vector3 direction = itemGetPos.forward;
+        DebugBox(origin, direction);
         RaycastHit[] hits = Physics.BoxCastAll(origin, boxSize / 2, direction, Quaternion.identity, castDistance, itemLayer);
 
         foreach (var hit in hits)
@@ -162,19 +227,32 @@ public class PlayerManager : MonoBehaviour
             {
                 curItem = hit.collider.GetComponent<Item>();
                 curGunType = curItem.gunType;
-                rifleFireDelay = curItem.fireDelay;
-                weaponMaxDistance = curItem.maxDistance;
-                curBulletTotalCount = curItem.bulletTotalCount;
-                curBulletCount = curItem.bulletCurrentCount;
+                curGunIndex = (int)curGunType;
 
                 hit.collider.gameObject.SetActive(false);
-                isGetGunItem = true;
-                getItemImage.SetActive(true);
+                isGetGunItem[curGunIndex] = true;
                 audioSource.PlayOneShot(audioClipGetItem);
             }
             Debug.Log($"Item : {hit.collider.name}");
             break;
         }
+    }
+
+    // 재장전
+    private void Reload()
+    {
+        if (Input.GetKeyDown(KeyCode.R) && isGetGunItem[curGunIndex] && isUseWeapon && curBulletTotalCount>0 && !isReloading && !isAim)
+        {
+            isReloading = true;
+            curBulletCount = curBulletTotalCount;
+            currentBulletText.text = $"Current: {curBulletCount}";
+            animator.SetTrigger("Reload");
+        }
+    }
+
+    public void ReloadOff()
+    {
+        isReloading = false;
     }
 
     // 마우스 입력을 받아 카메라와 플레이어 회전 처리
@@ -237,7 +315,7 @@ public class PlayerManager : MonoBehaviour
     public void AimOn()
     {
         // 우클릭 누르고 있는 동안
-        if (Input.GetMouseButtonDown(1) && isGetGunItem && isUseWeapon)
+        if (Input.GetMouseButtonDown(1) && isGetGunItem[curGunIndex] && isUseWeapon && !isReloading)
         {
             isAim = true;
             crossHairImage.SetActive(true);
@@ -272,7 +350,7 @@ public class PlayerManager : MonoBehaviour
     public void AimOff()
     {
         // 우클릭 해제 하면
-        if (Input.GetMouseButtonUp(1) && isGetGunItem && isUseWeapon)
+        if (Input.GetMouseButtonUp(1) && isGetGunItem[curGunIndex] && isUseWeapon && !isReloading)
         {
             isAim = false;
             crossHairImage.SetActive(false);
@@ -318,9 +396,6 @@ public class PlayerManager : MonoBehaviour
             // 조준을 하고 있을 때/ 발사를 하고 있지 않을 때/ 현재 총알 수가 0보다 많을 때만
             if (isAim && !isFire && curBulletCount > 0)
             {
-                // 총알 수 감소
-                curBulletCount--;
-
                 // 발사 중으로 체크
                 isFire = true;
                 animator.SetTrigger("Fire");
@@ -345,8 +420,8 @@ public class PlayerManager : MonoBehaviour
                     foreach (var hit in hits)
                     {
                         ZombieManager zombie = hit.collider.GetComponent<ZombieManager>();
-                        zombie.HP -= 10;
                         Debug.Log($"충돌: {hit.collider.name}, {zombie.HP}");
+                        zombie.ChangeState(EZombieState.Damage, currentDamage);
                         Debug.DrawLine(ray.origin, hit.point, Color.red, 2.0f);
                     }
                 }
@@ -367,10 +442,36 @@ public class PlayerManager : MonoBehaviour
     public void ChangeWeapon()
     {
         // 1번 키를 눌렀을 때/ 총을 가지고 있을 때만
-        if (Input.GetKeyDown(KeyCode.Alpha1) && isGetGunItem)
+        if (Input.GetKeyDown(KeyCode.Alpha1) && isGetGunItem[0])
         {
+            gunObj[prevGunIndex].SetActive(false);
+            getItemImages[prevGunIndex].SetActive(false);
+
             // 손에 미리 장착해 놓은 총 활성화
-            rifleM4Obj.SetActive(true);
+            gunObj[0].SetActive(true);
+            getItemImages[0].SetActive(true);
+
+            prevGunIndex = 0;
+
+            SetGunData(0);
+
+            animator.SetTrigger("onChangeWeapon");
+            // 조준을 할 수 있도록 체크
+            isUseWeapon = true;
+        }
+        else if (Input.GetKeyDown(KeyCode.Alpha2) && isGetGunItem[1])
+        {
+            gunObj[prevGunIndex].SetActive(false);
+            getItemImages[prevGunIndex].SetActive(false);
+
+            // 손에 미리 장착해 놓은 총 활성화
+            gunObj[1].SetActive(true);
+            getItemImages[1].SetActive(true);
+
+            prevGunIndex = 1;
+
+            SetGunData(1);
+
             animator.SetTrigger("onChangeWeapon");
             // 조준을 할 수 있도록 체크
             isUseWeapon = true;
@@ -478,7 +579,7 @@ public class PlayerManager : MonoBehaviour
     // 총알 발사에 딜레이를 주는 함수
     IEnumerator FireOff()
     {
-        yield return new WaitForSeconds(rifleFireDelay);
+        yield return new WaitForSeconds(fireDelay);
         isFire = false;
     }
 
@@ -491,6 +592,9 @@ public class PlayerManager : MonoBehaviour
     // 총알 발사 애니메이션에서 audio 및 발사 파티클 play 이벤트
     public void OnFireAudio()
     {
+        // 총알 수 감소
+        curBulletCount--;
+        currentBulletText.text = $"Current: {curBulletCount}";
         audioSource.PlayOneShot(audioClipFire);
         shotEffect.Play();
     }
